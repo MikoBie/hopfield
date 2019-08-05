@@ -1,5 +1,5 @@
 ---
-title: "Hopfield netwrosk bdm"
+title: "Hopfield network bdm"
 description: |
     First attempt to compute bdm on Hopfield networks simulation data.
 author:
@@ -21,6 +21,7 @@ library(stringr)
 library(purrr)
 library(reticulate)
 library(magrittr)
+library(zoo)
 use_condaenv("bdm")
 theme_set(theme_bw())
 ```
@@ -45,16 +46,66 @@ for (file_name in list_of_files) {
                           col_names = FALSE,
                           trim_ws = TRUE) %>%
     rename(timestep = X1,
-           magnetization = X2)
+           magnetization = X2) %>%
+    mutate(name = name)
 }
+mags_binded <- mags %>%
+  bind_rows()
 ```
 
 What's the difference between critical 1 and critical 2, because their histogram are clearly different?
 I am just not sure if there anything to see here if the differences are so obvious.
-How to bin the data, doing it by just cutting into even parts makes no sense at all. Quantiles or whatsever has more sense.
+How to bin the data, doing it by just cutting into even parts makes no sense at all. Quantiles or whatsoever has more sense.
 
-```{r histograms}
-lapply(mags, function(table){hist(table$magnetization)})
+```{r mags_histograms}
+mags_binded %>%
+  group_by(name) %>%
+  ggplot(aes(x = magnetization)) +
+  geom_histogram() +
+  facet_wrap(~name)
+```
+
+There is not point of doing anything with magnetization of subCritical because it is almost always 1. The only difference between subCritical_1 and subCritical_2 is that the former reaches 1 after 5 steps, and the latter after 13 steps.
+
+### 9-quantiles
+
+```{r quantiles}
+mags_quatiles <- mags[c(1,2,5,6)] %>%
+  map_depth(1, function(table){
+    table %>%
+      mutate(quantile = cut(magnetization,
+                            breaks = quantile(magnetization,
+                                              probs = seq(0, 1, 1/9)),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('1','2','3','4','5','6','7','8','9')))
+  })
+```
+
+```{python quantiles_cmx}
+import numpy as np
+import pandas as pd
+from bdm import BDMIgnore as BDM
+```
+
+### Even bins
+
+```{r even_bins}
+mags_even_bins <- mags[c(1,2,5,6)] %>%
+  map_depth(1, function(table){
+    table %>%
+      mutate(quantile = cut(magnetization,
+                            breaks = seq(0, 1, 1/9),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('1','2','3','4','5','6','7','8','9')))
+  })
+```
+
+```{python even_bins_cmx}
+import numpy as np
+import pandas as pd
+from bdm import BDMIgnore as BDM
 ```
 
 ## States
@@ -83,24 +134,22 @@ for (file_name in list_of_files) {
 }
 ```
 
-
-
-```{r}
-states_bdm <- lapply(states, function(table){
+```{r prepare_data_for_bdm}
+states_bdm <- map_depth(states, 1, function(table){
   table %>%
     mutate(compability = instantaneous * preferred) %>%
     gather(key = 'klucz',
            value = 'bit',
-           c(instantaneous, zgodnosc, preferred)) %>%
+           c(instantaneous, compability, preferred)) %>%
     mutate(bit = (bit + 1)/2) %>%
     group_by(timestep, klucz) %>%
     summarise(seq = list(bit))
 })
 
 ```
+First, we computed a measure of comp ability between preferred and instantaneous states. This way were able to see whether preferred state matched instantaneous state. We did it by just multiplying this two states by each other ($compability = instantaneous \times preferred$). Afterward, we transformed the data from the two element alphabet of -1 and 1 to two element alphabet of 0 and 1.
 
-
-```{python}
+```{python compute_states_cmx}
 import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
@@ -121,41 +170,46 @@ for i in range(6):
                                'name': data.index[i]}))
 
 ```
-Zobaczyć jak się będzie zgodność zmieniać preferred i 
-```{r}
+
+```{r prepare_states_for_viz}
 states_cmx <- py$result %>%
   bind_rows()
-```
-```{r chart_cmx}
-
-states_cmx %>%
-  filter(type != 'preferred') %>%
-  group_by(type) %>%
-  ggplot(aes(x = timestep, y = ncmx, color = name)) +
-  facet_wrap(~type) +
-  geom_line() +
-  labs(y = "Normalized Algorithmic Complexity",
-       x = "Timestep") +
-  scale_color_discrete("")
 
 states_cmx %>%
   filter(type != 'preferred') %>%
   group_by(type, name) %>%
   summarise(sd_cmx = sd(ncmx),
             sd_nent = sd(nent))
-  
-
 ```
-```{r chart_cmx}
 
+### Time series of Algorithmic Complexity
+
+```{r chart_cmx}
 states_cmx %>%
   filter(type != 'preferred') %>%
-  group_by(type) %>%
+  group_by(type, name) %>%
+  mutate(rmean_ncmx = rollmean(ncmx, k = 7, align = "center", na.pad = TRUE),
+         cumsum_ncmx = cumsum(ncmx)) %>%
+  ggplot(aes(x = timestep, y = ncmx, color = name)) +
+  facet_wrap(~type) +
+  geom_line() +
+  labs(y = "Normalized Algorithmic Complexity",
+       x = "Time step") +
+  scale_color_discrete("")
+```
+
+### Time series of Entropy
+
+```{r chart_ent}
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type,name) %>%
+  mutate(rmean_nent = rollmean(nent, k = 7, align = "center", na.pad = TRUE),
+         cumsum_nent = cumsum(nent)) %>%
   ggplot(aes(x = timestep, y = nent, color = name)) +
   facet_wrap(~type) +
   geom_line() +
   labs(y = "Normalized Entropy",
-       x = "Timestep") +
+       x = "Time step") +
   scale_color_discrete("")
-
 ```
