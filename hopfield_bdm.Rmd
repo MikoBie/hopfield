@@ -1,0 +1,161 @@
+---
+title: "Hopfield netwrosk bdm"
+description: |
+    First attempt to compute bdm on Hopfield networks simulation data.
+author:
+  - name: Szymon Talaga and Mikołaj Biesaga
+    affiliation: The Robert Zajonc Institute for Social Studies
+    affiliation_url: www.iss.uw.edu.pl/en/
+date: "`r Sys.Date()`"
+output: radix::radix_article
+---
+
+```{r setup_env, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.asp = 1)
+```
+
+```{r setup}
+library(tidyverse)
+library(readr)
+library(stringr)
+library(purrr)
+library(reticulate)
+library(magrittr)
+use_condaenv("bdm")
+theme_set(theme_bw())
+```
+
+## Magnitude
+
+
+```{r read_data_magnitude}
+path_mags <- 'data/base-model/Mags/'
+list_of_files <- list.files(path = path_mags, pattern = '.csv')
+
+mags <- list()
+for (file_name in list_of_files) {
+  name <- file_name %>%
+    word(start = 2,
+         end = 3,
+         sep = "_") %>%
+    str_extract(pattern = '\\w+_\\d')
+  mags[[name]] <- read_delim(file = paste0(path_mags,file_name),
+                          delim = '\t',
+                          escape_double = FALSE,
+                          col_names = FALSE,
+                          trim_ws = TRUE) %>%
+    rename(timestep = X1,
+           magnetization = X2)
+}
+```
+
+What's the difference between critical 1 and critical 2, because their histogram are clearly different?
+I am just not sure if there anything to see here if the differences are so obvious.
+How to bin the data, doing it by just cutting into even parts makes no sense at all. Quantiles or whatsever has more sense.
+
+```{r histograms}
+lapply(mags, function(table){hist(table$magnetization)})
+```
+
+## States
+
+```{r read_data_states}
+path_states <- 'data/base-model/States/'
+list_of_files <- list.files(path = path_states, pattern = '.csv')
+
+states <- list()
+for (file_name in list_of_files) {
+  name <- file_name %>%
+    word(start = 2,
+         end = 3,
+         sep = "_") %>%
+    str_extract(pattern = '\\w+_\\d')
+  states[[name]] <- read_delim(file = paste0(path_states,file_name),
+                          delim = '\t',
+                          escape_double = FALSE,
+                          col_names = FALSE,
+                          trim_ws = TRUE) %>%
+    rename(timestep = X1,
+           instantaneous = X2,
+           preferred = X3) %>%
+    group_by(timestep) %>%
+    mutate(id = 1:n())
+}
+```
+
+
+
+```{r}
+states_bdm <- lapply(states, function(table){
+  table %>%
+    mutate(compability = instantaneous * preferred) %>%
+    gather(key = 'klucz',
+           value = 'bit',
+           c(instantaneous, zgodnosc, preferred)) %>%
+    mutate(bit = (bit + 1)/2) %>%
+    group_by(timestep, klucz) %>%
+    summarise(seq = list(bit))
+})
+
+```
+
+
+```{python}
+import numpy as np
+import pandas as pd
+from bdm import BDMIgnore as BDM
+
+bdm = BDM(ndim=1)
+    
+data = pd.DataFrame.from_dict(r.states_bdm, orient = 'index').rename(columns = {0: 'frames'})
+result = []
+
+for i in range(6):
+   data.frames[i].seq = pd.Series(data.frames[i].seq.apply(lambda x: np.array(x, dtype = int)))
+   result.append(pd.DataFrame({'timestep': data.frames[i].timestep.astype(int),
+                               'cmx': data.frames[i].seq.apply(bdm.bdm),
+                               'ncmx': data.frames[i].seq.apply(bdm.nbdm),
+                               'ent': data.frames[i].seq.apply(bdm.ent),
+                               'nent': data.frames[i].seq.apply(bdm.nent),
+                               'type': data.frames[i].klucz,
+                               'name': data.index[i]}))
+
+```
+Zobaczyć jak się będzie zgodność zmieniać preferred i 
+```{r}
+states_cmx <- py$result %>%
+  bind_rows()
+```
+```{r chart_cmx}
+
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type) %>%
+  ggplot(aes(x = timestep, y = ncmx, color = name)) +
+  facet_wrap(~type) +
+  geom_line() +
+  labs(y = "Normalized Algorithmic Complexity",
+       x = "Timestep") +
+  scale_color_discrete("")
+
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type, name) %>%
+  summarise(sd_cmx = sd(ncmx),
+            sd_nent = sd(nent))
+  
+
+```
+```{r chart_cmx}
+
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type) %>%
+  ggplot(aes(x = timestep, y = nent, color = name)) +
+  facet_wrap(~type) +
+  geom_line() +
+  labs(y = "Normalized Entropy",
+       x = "Timestep") +
+  scale_color_discrete("")
+
+```
