@@ -27,9 +27,11 @@ use_condaenv("bdm")
 theme_set(theme_bw())
 ```
 
-## Magnitude
+## Magnetization
 
-```{r read_data_magnitude}
+To compute algorithmic complexity on magnetization data we first had to bin the data. We figured that there are two reasonable ways of doing it: compute quantiles or just divide the line section from 0 to 1 into even number of bins.
+
+```{r read_data_magnetization}
 path_mags <- 'data/base-model/Mags/'
 list_of_files <- list.files(path = path_mags, pattern = '.csv')
 
@@ -86,6 +88,13 @@ import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
 
+data = r.mags_quantiles
+bdm = BDM(ndim=1, nsymbols=9)
+data.seq = data.seq.apply(lambda x: np.array(x, dtype = int) - 1)
+
+mags_quantiles = pd.DataFrame({"name": data.name,
+                               "ncmx": data.seq.apply(bdm.nbdm),
+                               "cmx": data.seq.apply(bdm.bdm)})
 
 ```
 
@@ -111,8 +120,35 @@ import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
 
+data = r.mags_even_bins
+bdm = BDM(ndim=1, nsymbols=9)
+data.seq = data.seq.apply(lambda x: np.array(x, dtype = int) - 1)
 
+even_bins = pd.DataFrame({"name": data.name,
+                          "ncmx": data.seq.apply(bdm.nbdm),
+                          "cmx": data.seq.apply(bdm.bdm)})
+```
 
+### The difference between quantiles and even bins
+
+```{r difference_between_bins}
+mags_quantiles_cmx <- py$mags_quantiles %>%
+  mutate(bins = "quantiles") %>%
+  unnest()
+mags_even_bins_cmx <- py$even_bins %>%
+  mutate(bins = "even_bins") %>%
+  unnest()
+
+mags_quantiles_cmx %>%
+  bind_rows(mags_even_bins_cmx) %>%
+  gather(key = "klucz",
+         value = "wartosc",
+         cmx:ncmx) %>%
+  mutate(klucz = paste0(klucz,"_", name)) %>%
+  select(-name) %>%
+  spread(bins, wartosc) %>%
+  mutate(difference = even_bins - quantiles)
+  
 ```
 
 ## States
