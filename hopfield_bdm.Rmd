@@ -22,12 +22,12 @@ library(purrr)
 library(reticulate)
 library(magrittr)
 library(zoo)
+library(boot)
 use_condaenv("bdm")
 theme_set(theme_bw())
 ```
 
 ## Magnitude
-
 
 ```{r read_data_magnitude}
 path_mags <- 'data/base-model/Mags/'
@@ -53,10 +53,6 @@ mags_binded <- mags %>%
   bind_rows()
 ```
 
-What's the difference between critical 1 and critical 2, because their histogram are clearly different?
-I am just not sure if there anything to see here if the differences are so obvious.
-How to bin the data, doing it by just cutting into even parts makes no sense at all. Quantiles or whatsoever has more sense.
-
 ```{r mags_histograms}
 mags_binded %>%
   group_by(name) %>%
@@ -65,12 +61,12 @@ mags_binded %>%
   facet_wrap(~name)
 ```
 
-There is not point of doing anything with magnetization of subCritical because it is almost always 1. The only difference between subCritical_1 and subCritical_2 is that the former reaches 1 after 5 steps, and the latter after 13 steps.
+There is no point of doing anything with magnetization of subCritical because it is almost always 1. The only difference between subCritical_1 and subCritical_2 is that the former reaches 1 after 5 steps, and the latter after 13 steps.
 
 ### 9-quantiles
 
 ```{r quantiles}
-mags_quatiles <- mags[c(1,2,5,6)] %>%
+mags_quantiles <- mags[c(1,2,5,6)] %>%
   map_depth(1, function(table){
     table %>%
       mutate(quantile = cut(magnetization,
@@ -79,13 +75,18 @@ mags_quatiles <- mags[c(1,2,5,6)] %>%
                             include.lowest = TRUE,
                             right = TRUE,
                             labels = c('1','2','3','4','5','6','7','8','9')))
-  })
+  }) %>%
+  bind_rows() %>%
+  group_by(name) %>%
+  summarise(seq = list(quantile))
 ```
 
 ```{python quantiles_cmx}
 import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
+
+
 ```
 
 ### Even bins
@@ -94,18 +95,24 @@ from bdm import BDMIgnore as BDM
 mags_even_bins <- mags[c(1,2,5,6)] %>%
   map_depth(1, function(table){
     table %>%
-      mutate(quantile = cut(magnetization,
-                            breaks = seq(0, 1, 1/9),
-                            include.lowest = TRUE,
-                            right = TRUE,
-                            labels = c('1','2','3','4','5','6','7','8','9')))
-  })
+      mutate(bins = cut(magnetization,
+                        breaks = seq(0, 1, 1/9),
+                        include.lowest = TRUE,
+                        right = TRUE,
+                        labels = c('1','2','3','4','5','6','7','8','9')))
+  }) %>%
+  bind_rows() %>%
+  group_by(name) %>%
+  summarise(seq = list(bins))
 ```
 
 ```{python even_bins_cmx}
 import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
+
+
+
 ```
 
 ## States
@@ -147,7 +154,10 @@ states_bdm <- map_depth(states, 1, function(table){
 })
 
 ```
-First, we computed a measure of comp ability between preferred and instantaneous states. This way were able to see whether preferred state matched instantaneous state. We did it by just multiplying this two states by each other ($compability = instantaneous \times preferred$). Afterward, we transformed the data from the two element alphabet of -1 and 1 to two element alphabet of 0 and 1.
+
+First, we computed a measure of compatibility between preferred and instantaneous states. This way we were able to see whether the preferred state matched the instantaneous state. We did it by just multiplying these two states by each other ($compability = instantaneous \times preferred$). Afterward, we transformed the data from the two-element alphabet of -1 and 1 into two-element alphabet of 0 and 1.
+
+Apart from computing the change over time of the algorithmic complexity we also calculated series entropy. We wanted to see whether the algorithmic complexity is a more sensitive measure which allows distinguishing smaller differences between series. We used normalized algorithmic complexity and normalized entropy. Therefore, both measures have limits in 0 and 1.
 
 ```{python compute_states_cmx}
 import numpy as np
@@ -174,12 +184,6 @@ for i in range(6):
 ```{r prepare_states_for_viz}
 states_cmx <- py$result %>%
   bind_rows()
-
-states_cmx %>%
-  filter(type != 'preferred') %>%
-  group_by(type, name) %>%
-  summarise(sd_cmx = sd(ncmx),
-            sd_nent = sd(nent))
 ```
 
 ### Time series of Algorithmic Complexity
@@ -193,7 +197,20 @@ states_cmx %>%
   ggplot(aes(x = timestep, y = ncmx, color = name)) +
   facet_wrap(~type) +
   geom_line() +
+  geom_smooth(method = "loess", linetype = 'dashed', se = FALSE, alpha = .5) +
   labs(y = "Normalized Algorithmic Complexity",
+       x = "Time step") +
+  scale_color_discrete("")
+
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type, name) %>%
+  mutate(rmean_ncmx = rollmean(ncmx, k = 7, align = "center", na.pad = TRUE),
+         cumsum_ncmx = cumsum(ncmx)) %>%
+  ggplot(aes(x = timestep, y = cumsum_ncmx, color = name)) +
+  facet_wrap(~type) +
+  geom_line() +
+  labs(y = "Cumulative Sum of Normalized Algorithmic Complexity",
        x = "Time step") +
   scale_color_discrete("")
 ```
@@ -209,7 +226,53 @@ states_cmx %>%
   ggplot(aes(x = timestep, y = nent, color = name)) +
   facet_wrap(~type) +
   geom_line() +
+  geom_smooth(method = "loess", linetype = 'dashed', se = FALSE, alpha = .5) +
   labs(y = "Normalized Entropy",
        x = "Time step") +
   scale_color_discrete("")
+
+states_cmx %>%
+  filter(type != 'preferred') %>%
+  group_by(type,name) %>%
+  mutate(rmean_nent = rollmean(nent, k = 7, align = "center", na.pad = TRUE),
+         cumsum_nent = cumsum(nent)) %>%
+  ggplot(aes(x = timestep, y = cumsum_nent, color = name)) +
+  facet_wrap(~type) +
+  geom_line() +
+  labs(y = "Cumulative Sum of Normalized Entropy",
+       x = "Time step") +
+  scale_color_discrete("")
 ```
+
+### Bootstrap non-parametric variance and mean test
+
+We wanted to test the hypothesis that the algorithmic complexity is a more sensitive measure than entropy. We focused here only on comparison between critical_2 and superCritical_2 since the difference between these two series was the smallest both in entropy and algorithmic complexity. For testing this hypothesis we implemented following non-parametric bootstrap test of effect sizes invariance and mean. First, we resampled with replacement relevant groups 1,000 times (we did it for both normalized algorithmic complexity and normalized entropy). Second, for each resampling, we computed the effect size of the difference between critical_2 and superCritical_2 for algorithmic complexity and entropy. Third, we calculated $90\%$ confidence intervals for the tests of variance and mean.
+
+```{r stat_fun}
+stat_fun <- function(df = states_cmx, timestep = timestep, var_1 = "critical_2", var_2 = "superCritical_2", fun = mean) {
+  df <- slice(df, !!timestep)
+    stat_1 <- df %>% filter(name == var_2 & type == "compability") %$% fun(ncmx)
+    stat_2 <- df %>% filter(name == var_1 & type == "compability") %$% fun(ncmx)
+    stat_3 <- df %>% filter(name == var_2 & type == "compability") %$% fun(nent)
+    stat_4 <- df %>% filter(name == var_1 & type == "compability") %$% fun(nent)
+    (stat_1 - stat_2) - (stat_3 - stat_4)
+}
+```
+
+```{r mean_test}
+set.seed(8710)
+## Critical_2 and superCritical_2
+difference_mean <- boot(states_cmx, stat_fun, R = 1000, stype = "i", parallel = "multicore")
+quantile(difference_mean$t[, 1], probs = c(.01, .99))
+```
+
+The $90\%\ CI[.0332\ .0381]$ showed that the effect size of the mean difference was bigger in algorithmic complexity than entropy. The algorithmic complexity showed a bigger difference in between critical_2 and superCiritical_2 than entropy.
+
+```{r sd_test}
+set.seed(8710)
+## Critical_2 and superCritical_2
+difference_var <- boot(states_cmx, fun = var, var_1 = "superCritical_2", var_2 = "critical_2", stat_fun, R = 1000, stype = "i", parallel = "multicore")
+quantile(difference_var$t[, 1], probs = c(.01, .99))
+```
+
+The $90\%\ CI[.0014\ .0020]$ showed that the effect size of the variance difference was bigger in algorithmic complexity than entropy. The algorithmic complexity showed a bigger difference in variance between critical_2 and superCiritical_2 than entropy.
