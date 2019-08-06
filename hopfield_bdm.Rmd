@@ -29,8 +29,6 @@ theme_set(theme_bw())
 
 ## Magnetization
 
-To compute algorithmic complexity on magnetization data we first had to bin the data. We figured that there are two reasonable ways of doing it: compute quantiles or just divide the line section from 0 to 1 into even number of bins.
-
 ```{r read_data_magnetization}
 path_mags <- 'data/base-model/Mags/'
 list_of_files <- list.files(path = path_mags, pattern = '.csv')
@@ -64,6 +62,8 @@ mags_binded %>%
 ```
 
 There is no point of doing anything with magnetization of subCritical because it is almost always 1. The only difference between subCritical_1 and subCritical_2 is that the former reaches 1 after 5 steps, and the latter after 13 steps.
+
+To compute algorithmic complexity on magnetization data we first had to bin the data. We figured that there are two reasonable ways of doing it: compute quantiles or compute evenly long bins.  The current version of Szymon's package limits computing algorithmic complexity to series with maximum 9 different elements. Therefore, we computed 9-quantiles and 9 evenly long bins.
 
 ### 9-quantiles
 
