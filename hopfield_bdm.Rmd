@@ -63,24 +63,52 @@ mags_binded %>%
 
 There is no point of doing anything with magnetization of subCritical because it is almost always 1. The only difference between subCritical_1 and subCritical_2 is that the former reaches 1 after 5 steps, and the latter after 13 steps.
 
-To compute algorithmic complexity on magnetization data we first had to bin the data. We figured that there are two reasonable ways of doing it: compute quantiles or compute evenly long bins.  The current version of Szymon's package limits computing algorithmic complexity to series with maximum 9 different elements. Therefore, we computed 9-quantiles and 9 evenly long bins.
+To compute algorithmic complexity on magnetization data we first had to bin the data. We figured that there are two reasonable ways of doing it: compute quantiles or compute equally long bins.  The current version of Szymon's package limits computing algorithmic complexity to series with maximum 9 different elements. Therefore, we computed bins only up to this number of elements.
 
-### 9-quantiles
+### Quantiles
 
 ```{r quantiles}
 mags_quantiles <- mags[c(1,2,5,6)] %>%
   map_depth(1, function(table){
     table %>%
-      mutate(quantile = cut(magnetization,
+      mutate("quantile9" = cut(magnetization,
                             breaks = quantile(magnetization,
                                               probs = seq(0, 1, 1/9)),
                             include.lowest = TRUE,
                             right = TRUE,
-                            labels = c('1','2','3','4','5','6','7','8','9')))
+                            labels = c('0','1','2','3','4','5','6','7','8')),
+             "quantile2" = cut(magnetization,
+                            breaks = quantile(magnetization,
+                                              probs = seq(0, 1, 1/2)),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0', '1')),
+             "quantile4" = cut(magnetization,
+                            breaks = quantile(magnetization,
+                                              probs = seq(0, 1, 1/4)),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0', '1', '2', '3')),
+             "quantile5" = cut(magnetization,
+                            breaks = quantile(magnetization,
+                                              probs = seq(0, 1, 1/5)),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0','1','2','3','4')),
+             "quantile6" = cut(magnetization,
+                            breaks = quantile(magnetization,
+                                              probs = seq(0, 1, 1/6)),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0','1','2','3','4','5')))
   }) %>%
   bind_rows() %>%
   group_by(name) %>%
-  summarise(seq = list(quantile))
+  summarise(seq9 = list(quantile9),
+            seq2 = list(quantile2),
+            seq4 = list(quantile4),
+            seq5 = list(quantile5),
+            seq6 = list(quantile6))
 ```
 
 ```{python quantiles_cmx}
@@ -89,30 +117,83 @@ import pandas as pd
 from bdm import BDMIgnore as BDM
 
 data = r.mags_quantiles
-bdm = BDM(ndim=1, nsymbols=9)
-data.seq = data.seq.apply(lambda x: np.array(x, dtype = int) - 1)
+bdm9 = BDM(ndim=1, nsymbols=9)
+bdm2 = BDM(ndim=1, nsymbols=2)
+bdm4 = BDM(ndim=1, nsymbols=4)
+bdm5 = BDM(ndim=1, nsymbols=5)
+bdm6 = BDM(ndim=1, nsymbols=6)
+
+data.seq9 = data.seq9.apply(lambda x: np.array(x, dtype = int))
+data.seq2 = data.seq2.apply(lambda x: np.array(x, dtype = int))
+data.seq4 = data.seq4.apply(lambda x: np.array(x, dtype = int))
+data.seq5 = data.seq5.apply(lambda x: np.array(x, dtype = int))
+data.seq6 = data.seq6.apply(lambda x: np.array(x, dtype = int))
 
 mags_quantiles = pd.DataFrame({"name": data.name,
-                               "ncmx": data.seq.apply(bdm.nbdm),
-                               "cmx": data.seq.apply(bdm.bdm)})
+                               "ncmx9": data.seq9.apply(bdm9.nbdm),
+                               "cmx9": data.seq9.apply(bdm9.bdm),
+                               "ncmx2": data.seq2.apply(bdm2.nbdm),
+                               "cmx2": data.seq2.apply(bdm2.bdm),
+                               "ncmx4": data.seq4.apply(bdm4.nbdm),
+                               "cmx4": data.seq4.apply(bdm4.bdm),
+                               "ncmx5": data.seq5.apply(bdm5.nbdm),
+                               "cmx5": data.seq5.apply(bdm5.bdm),
+                               "ncmx6": data.seq6.apply(bdm6.nbdm),
+                               "cmx6": data.seq6.apply(bdm6.bdm)})
 
 ```
 
-### Even bins
+
+
+### Equal bins
 
 ```{r even_bins}
-mags_even_bins <- mags[c(1,2,5,6)] %>%
+mags_equal_bins <- mags[c(1,2,5,6)] %>%
   map_depth(1, function(table){
     table %>%
-      mutate(bins = cut(magnetization,
-                        breaks = seq(0, 1, 1/9),
-                        include.lowest = TRUE,
-                        right = TRUE,
-                        labels = c('1','2','3','4','5','6','7','8','9')))
+      mutate("bins9" = cut(magnetization,
+                            breaks = seq(min(magnetization),
+                                         max(magnetization),
+                                         (max(magnetization) - min(magnetization))/9),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0','1','2','3','4','5','6','7','8')),
+             "bins2" = cut(magnetization,
+                            breaks = seq(min(magnetization),
+                                         max(magnetization),
+                                         (max(magnetization) - min(magnetization))/2),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0', '1')),
+             "bins4" = cut(magnetization,
+                            breaks = seq(min(magnetization),
+                                         max(magnetization),
+                                         (max(magnetization) - min(magnetization))/4),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0', '1', '2', '3')),
+             "bins5" = cut(magnetization,
+                            breaks = seq(min(magnetization),
+                                         max(magnetization),
+                                         (max(magnetization) - min(magnetization))/5),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0','1','2','3','4')),
+             "bins6" = cut(magnetization,
+                            breaks = seq(min(magnetization),
+                                         max(magnetization),
+                                         (max(magnetization) - min(magnetization))/6),
+                            include.lowest = TRUE,
+                            right = TRUE,
+                            labels = c('0','1','2','3','4','5')))
   }) %>%
   bind_rows() %>%
   group_by(name) %>%
-  summarise(seq = list(bins))
+  summarise(seq9 = list(bins9),
+            seq2 = list(bins2),
+            seq4 = list(bins4),
+            seq5 = list(bins5),
+            seq6 = list(bins6))
 ```
 
 ```{python even_bins_cmx}
@@ -120,32 +201,51 @@ import numpy as np
 import pandas as pd
 from bdm import BDMIgnore as BDM
 
-data = r.mags_even_bins
-bdm = BDM(ndim=1, nsymbols=9)
-data.seq = data.seq.apply(lambda x: np.array(x, dtype = int) - 1)
+data = r.mags_equal_bins
+bdm9 = BDM(ndim=1, nsymbols=9)
+bdm2 = BDM(ndim=1, nsymbols=2)
+bdm5 = BDM(ndim=1, nsymbols=5)
+bdm6 = BDM(ndim=1, nsymbols=6)
 
-even_bins = pd.DataFrame({"name": data.name,
-                          "ncmx": data.seq.apply(bdm.nbdm),
-                          "cmx": data.seq.apply(bdm.bdm)})
+data.seq9 = data.seq9.apply(lambda x: np.array(x, dtype = int))
+data.seq2 = data.seq2.apply(lambda x: np.array(x, dtype = int))
+data.seq4 = data.seq4.apply(lambda x: np.array(x, dtype = int))
+data.seq5 = data.seq5.apply(lambda x: np.array(x, dtype = int))
+data.seq6 = data.seq6.apply(lambda x: np.array(x, dtype = int))
+
+mags_equal_bins = pd.DataFrame({"name": data.name,
+                               "ncmx9": data.seq9.apply(bdm9.nbdm),
+                               "cmx9": data.seq9.apply(bdm9.bdm),
+                               "ncmx2": data.seq2.apply(bdm2.nbdm),
+                               "cmx2": data.seq2.apply(bdm2.bdm),
+                               "ncmx4": data.seq4.apply(bdm4.nbdm),
+                               "cmx4": data.seq4.apply(bdm4.bdm),
+                               "ncmx5": data.seq5.apply(bdm5.nbdm),
+                               "cmx5": data.seq5.apply(bdm5.bdm),
+                               "ncmx6": data.seq6.apply(bdm6.nbdm),
+                               "cmx6": data.seq6.apply(bdm6.bdm)})
 ```
 
-### The difference between quantiles and even bins
+### The difference between quantiles and equal bins
 
 ```{r difference_between_bins}
 mags_quantiles_cmx <- py$mags_quantiles %>%
   mutate(bins = "quantiles") %>%
   unnest()
-mags_even_bins_cmx <- py$even_bins %>%
-  mutate(bins = "even_bins") %>%
+mags_equal_bins_cmx <- py$mags_equal_bins %>%
+  mutate(bins = "equal_bins") %>%
   unnest()
 
+
+
 mags_quantiles_cmx %>%
-  bind_rows(mags_even_bins_cmx) %>%
+  bind_rows(mags_equal_bins_cmx) %>%
   gather(key = "klucz",
          value = "wartosc",
-         cmx:ncmx) %>%
+         ncmx9:cmx6) %>%
   mutate(klucz = paste0(klucz,"_", name)) %>%
   select(-name) %>%
+  filter(!grepl(klucz, pattern = "^ncmx\\d")) %>%
   spread(bins, wartosc) %>%
   mutate(difference = even_bins - quantiles)
   
