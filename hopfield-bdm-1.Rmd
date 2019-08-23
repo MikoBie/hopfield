@@ -188,7 +188,7 @@ M <- map(dir(file.path(DATA_PATH, "Mags"), pattern = "\\.csv$", full.names = TRU
 ```{r viz_magnetization_density, fig.width = 6, fig.asp = .618}
 M %>%
     ggplot(aes(x = m, fill = phase)) +
-    geom_density() +
+    geom_density(alpha = .5) +
     scale_fill_manual(values = COLORS, name = "") +
     labs(x = "Magnetization", y = "Probability density") +
     theme(legend.position = "top")
@@ -197,7 +197,7 @@ M %>%
 ```{r viz_magnetization_ts, fig.width = 6, fig.asp = .618}
 M %>%
     ggplot(aes(x = t, y = m, color = phase, group = as.factor(idx))) +
-    geom_line() +
+    geom_line(alpha = .5) +
     scale_color_manual(values = COLORS, name = "") +
     labs(x = "Time step", y = "Magnetization")
 ```
@@ -240,7 +240,8 @@ C_m <- map(c(2, 4, 5, 6, 9), ~{
         ungroup
 }) %>%
     reduce(left_join, by = c("idx", "phase")) %>%
-    select(idx, phase, starts_with("cmx_u"), starts_with("ent_u"), starts_with("p_u"))
+    select(idx, phase, starts_with("cmx_u"), starts_with("ent_u"), starts_with("p_u")) %>%
+    arrange(idx)
 ```
 
 ### Magnetization --- complexity
@@ -286,4 +287,20 @@ C_m %>%
     scale_x_continuous(breaks = c(2, 4, 5, 6, 9)) +
     labs(x = "Number of equal length bins", y = "Probability of being random") +
     theme(legend.position = "top")
+```
+
+### Classifier --- Linear Discriminant Function (LDA)
+
+```{r lda_classifier}
+fit_cmx <- MASS::lda(phase ~ ., data = select(C_m, phase, starts_with("cmx_u")), CV = TRUE)
+fit_ent <- MASS::lda(phase ~ ., data = select(C_m, phase, starts_with("ent_u")), CV = TRUE)
+table(C_m$phase, fit_cmx$class)
+table(C_m$phase, fit_ent$class)
+```
+
+### Hierarchical cluster analysis
+
+```{r hc}
+hc_cmx <- select(C_m, starts_with("cmx_u")) %>% dist %>% hclust
+hc_ent <- select(C_m, starts_with("ent_u")) %>% dist %>% hclust
 ```
