@@ -262,7 +262,6 @@ C_m %>%
     ggplot(aes(x = nsymbols, y = mean, color = phase, group = interaction(phase, idx))) +
     geom_line() +
     geom_point(pch = 16, size = 3) +
-    geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.7,position=position_dodge(0.05)) +
     facet_wrap(~measure, scales = "free_y") +
     scale_color_manual(values = COLORS, name = "Phase") +
     scale_x_continuous(breaks = c(2, 4, 5, 6, 9)) +
