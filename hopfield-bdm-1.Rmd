@@ -140,7 +140,7 @@ theme_set(theme_bw())
 use_condaenv("bdm")
 
 # Globals
-DATA_PATH <- normalizePath(file.path( '.','..', 'data', 'base-model'))
+DATA_PATH <- normalizePath(file.path('.', '..', 'data'))
 COLORS <- c("green3", "red3", "cornflowerblue")
 ```
 
@@ -172,7 +172,6 @@ M <- map(dir(file.path(DATA_PATH, "Mags"), pattern = "\\.csv$", full.names = TRU
 }) %>%
     bind_rows %>%
     group_by(phase) %>%
-    mutate(idx = if_else(idx == min(idx), 1, 2)) %>%
     # ungroup %>%
     mutate(
         # discretize to uniform bins
@@ -188,18 +187,17 @@ M <- map(dir(file.path(DATA_PATH, "Mags"), pattern = "\\.csv$", full.names = TRU
 
 ```{r viz_magnetization_density, fig.width = 6, fig.asp = .618}
 M %>%
-    ggplot(aes(x = m, fill = as.factor(idx))) +
+    ggplot(aes(x = m, fill = phase)) +
     geom_density() +
-    facet_wrap(~phase, ncol = 1, scales = "free_y") +
     scale_fill_manual(values = COLORS, name = "") +
-    labs(x = "Magnetization", y = "Probability density")
+    labs(x = "Magnetization", y = "Probability density") +
+    theme(legend.position = "top")
 ```
 
 ```{r viz_magnetization_ts, fig.width = 6, fig.asp = .618}
 M %>%
-    ggplot(aes(x = t, y = m, color = as.factor(idx)), group = as.factor(idx)) +
+    ggplot(aes(x = t, y = m, color = phase, group = as.factor(idx))) +
     geom_line() +
-    facet_wrap(~phase, ncol = 1) +
     scale_color_manual(values = COLORS, name = "") +
     labs(x = "Time step", y = "Magnetization")
 ```
@@ -219,52 +217,37 @@ def get_bdm(x, nsymbols, ent=False, shape=12):
 ```
 
 ```{r compute_bdm, warning=FALSE}
+# Function for computeing probability of randomness
+p_random <- function(s, nsymbols, p_R = 1/2, p_M = 1/2) {
+    l <- length(s)
+    cmx <- py$get_bdm(s, nsymbols = nsymbols)
+    1 / (2^(2*l - cmx) + 1)
+}
+
 # Complexity measures for magnetization
 C_m <- map(c(2, 4, 5, 6, 9), ~{
-    c6 <- sym(str_c("cmx6_u", .x))
-    e6 <- sym(str_c("ent6_u", .x))
-    c7 <- sym(str_c("cmx7_u", .x))
-    e7 <- sym(str_c("ent7_u", .x))
-    c8 <- sym(str_c("cmx8_u", .x))
-    e8 <- sym(str_c("ent8_u", .x))
-    c9 <- sym(str_c("cmx9_u", .x))
-    e9 <- sym(str_c("ent9_u", .x))
-    c10 <- sym(str_c("cmx10_u", .x))
-    e10 <- sym(str_c("ent10_u", .x))
-    c11 <- sym(str_c("cmx11_u", .x))
-    e11 <- sym(str_c("ent11_u", .x))
-    c12 <- sym(str_c("cmx12_u", .x))
-    e12 <- sym(str_c("ent12_u", .x))
+    c1 <- sym(str_c("cmx_u", .x))
+    e1 <- sym(str_c("ent_u", .x))
     m1 <- sym(str_c("m_u", .x))
+    p1 <- sym(str_c("p_u", .x))
     gdf <- M %>%
         group_by(phase, idx) %>%
         summarize(
-            !!c6 := py$get_bdm(!!m1, nsymbols = .x, shape=6),
-            !!e6 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=6),
-            !!c7 := py$get_bdm(!!m1, nsymbols = .x, shape=7),
-            !!e7 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=7),
-            !!c8 := py$get_bdm(!!m1, nsymbols = .x, shape=8),
-            !!e8 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=8),
-            !!c9 := py$get_bdm(!!m1, nsymbols = .x, shape=9),
-            !!e9 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=9),
-            !!c10 := py$get_bdm(!!m1, nsymbols = .x, shape=10),
-            !!e10 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=10),
-            !!c11 := py$get_bdm(!!m1, nsymbols = .x, shape=11),
-            !!e11 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=11),
-            !!c12 := py$get_bdm(!!m1, nsymbols = .x, shape=12),
-            !!e12 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE, shape=12),
+            !!c1 := py$get_bdm(!!m1, nsymbols = .x),
+            !!e1 := py$get_bdm(!!m1, nsymbols = .x, ent = TRUE),
+            !!p1 := p_random(!!m1, nsymbols = .x)
         ) %>%
         ungroup
 }) %>%
     reduce(left_join, by = c("idx", "phase")) %>%
-    select(idx, phase, matches("cmx\\d+_u"), matches("ent\\d+_u"), matches("cmx\\d+_q"), matches("ent\\d+_q"))
+    select(idx, phase, starts_with("cmx_u"), starts_with("ent_u"), starts_with("p_u"))
 ```
 
-### Magnetization
+### Magnetization --- complexity
 
 ```{r magnetization_ts, fig.width = 6, fig.asp = .618}
 C_m %>%
-    select(-matches("[dq]\\d")) %>%
+    select(-matches("(p_u)\\d")) %>%
     gather(key = "metric", value = "value", -phase, -idx) %>%
     mutate(
         measure = if_else(str_detect(metric, "^cmx"), "algorithmic complexity", "block entropy"),
@@ -284,5 +267,24 @@ C_m %>%
     scale_color_manual(values = COLORS, name = "Phase") +
     scale_x_continuous(breaks = c(2, 4, 5, 6, 9)) +
     labs(x = "Number of equal length bins", y = "") +
+    theme(legend.position = "top")
+```
+
+### Magentization --- probability of randomness
+
+```{r magentization_ts_randomness_probability, fig.width = 6, fig.asp = .618}
+C_m %>%
+    select(idx, phase, starts_with("p_u")) %>%
+    gather(key = "metric", value = "value", -phase, -idx) %>%
+    mutate(nsymbols = as.integer(str_extract(metric, "\\d$"))) %>%
+    group_by(phase, metric, nsymbols) %>%
+    summarize(p_random = mean(value)) %>%
+    ungroup %>%
+    ggplot(aes(x = nsymbols, y = p_random, color = phase, group = phase)) +
+    geom_line() +
+    geom_point(pch = 16, size = 3) +
+    scale_color_manual(values = COLORS, name = "Phase") +
+    scale_x_continuous(breaks = c(2, 4, 5, 6, 9)) +
+    labs(x = "Number of equal length bins", y = "Probability of being random") +
     theme(legend.position = "top")
 ```
